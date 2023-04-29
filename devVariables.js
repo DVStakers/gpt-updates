@@ -8,6 +8,15 @@ module.exports = {
                 "prom/node-exporter": "v1.5.0",
                 "jaegertracing/all-in-one": "1.41.0"
                 }`,
+    getLatestImageVersion: {
+        "obolnetwork/charon": "v0.15.0",
+        "sigp/lighthouse": "v4.1.0",
+        "consensys/teku": "23.4.0",
+        "prom/prometheus": "v2.43.0",
+        "grafana/grafana": "9.5.1",
+        "prom/node-exporter": "v1.5.0",
+        "jaegertracing/all-in-one": "1.44.0",
+    },
     getGitHubRepoURL: {
         "obolnetwork/charon": "https://github.com/obolnetwork/charon",
         "sigp/lighthouse": "https://github.com/sigp/lighthouse",
