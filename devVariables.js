@@ -17,5 +17,37 @@ module.exports = {
         "prom/node-exporter": "https://github.com/prometheus/node_exporter",
         "jaegertracing/all-in-one": "https://github.com/jaegertracing/jaeger",
     },
-    variable3: "value3",
+    updateDockerComposeFile: {
+        "obolnetwork/charon": {
+            indentation: "2",
+            updatedLine: "image: obolnetwork/charon:${CHARON_VERSION:-v0.15.0}",
+        },
+        "sigp/lighthouse": {
+            indentation: "4",
+            updatedLine: "image: sigp/lighthouse:${LIGHTHOUSE_VERSION:-v4.1.0}",
+        },
+        "consensys/teku": {
+            indentation: "4",
+            updatedLine: "image: consensys/teku:${TEKU_VERSION:-23.4.0}",
+        },
+        "prom/prometheus": {
+            indentation: "4",
+            updatedLine:
+                "image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}",
+        },
+        "grafana/grafana": {
+            indentation: "4",
+            updatedLine: "image: grafana/grafana:${GRAFANA_VERSION:-9.5.1}",
+        },
+        "prom/node_exporter": {
+            indentation: "4",
+            updatedLine:
+                "image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.5.0}",
+        },
+        "jaegertracing/all-in-one": {
+            indentation: "4",
+            updatedLine:
+                "image: jaegertracing/all-in-one:${JAEGAR_VERSION:-1.44.0}",
+        },
+    },
 }

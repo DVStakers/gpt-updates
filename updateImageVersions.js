@@ -115,21 +115,7 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
     }
 }
 
-// *********************************************************
-// Update the docker-compose.yml file with new image versions
-// *********************************************************
-async function updateDockerComposeFile(
-    mainRepoPath,
-    repo,
-    latestImageVersion,
-    currentImageVersion,
-    composeFilePath,
-    composeFileContents
-) {
-    console.log(
-        `Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`
-    )
-
+async function checkoutNewBranch(repo, latestImageVersion, mainRepoPath) {
     // Create and checkout a new branch for the update
     const branchName = `update-${repo}-${latestImageVersion}`
 
@@ -139,59 +125,49 @@ async function updateDockerComposeFile(
             stdio: "inherit",
         }
     )
+}
 
+async function commitAndPushChanges(mainRepoPath, repo, latestImageVersion) {
+    // Commit the changes
+    execSync(
+        `cd ${mainRepoPath} && git add . && git commit --quiet -m "Update ${repo} to ${latestImageVersion}"`,
+        { stdio: "inherit" }
+    )
+
+    // Push the branch
+    // execSync(`cd ${mainRepoPath} && git push -u origin ${branchName}`, {
+    //     stdio: "inherit",
+    // })
+}
+
+async function createPullRequest() {
+    // TODO: Create a PR
+    // Use the GitHub API to create a PR
+    // https://docs.github.com/en/rest/reference/pulls#create-a-pull-request
+    // Include a summary of the changes made in the description of the PR
+    // Include a summary of the release notes from the github release page in the description of the PR
+    // If I tag myself, will I be notified of the PR?
+    // Since I'm the one creating the PR, I don't think I'll be notified, but I want to be
+}
+
+// *********************************************************
+// Update the docker-compose.yml file with new image versions
+// *********************************************************
+async function updateDockerComposeFile(
+    repo,
+    latestImageVersion,
+    currentImageVersion,
+    composeFilePath,
+    composeFileContents
+) {
     // Make changes to the docker-compose.yml file
     // This is simple line replacement for now to avoid returning the whole file
     const prompt = `I have this docker-compose.yml file. I want to change the default version of the image ${repo} from ${currentImageVersion} to ${latestImageVersion}. Keep all the other content of the line identical, only change the version. I don't want you to return the entire file, because it's too big. Only respond with the number of spaces to indent the line and the contents of the changed line. Don't provide any text other than the number of spaces to indent the line and the contents of the changed line in the format:\n\n{"indentation": "<NUMBER_OF_SPACES>", "updatedLine": "{CHANGED_LINE_CONTENT"}\n\n${composeFileContents}`
 
-    let result
-    if (process.env.ENV == "dev") {
-        if (repo == "obolnetwork/charon") {
-            result = {
-                indentation: "2",
-                updatedLine:
-                    "image: obolnetwork/charon:${CHARON_VERSION:-v0.15.0}",
-            }
-        } else if (repo == "sigp/lighthouse") {
-            result = {
-                indentation: "4",
-                updatedLine:
-                    "image: sigp/lighthouse:${LIGHTHOUSE_VERSION:-v4.1.0}",
-            }
-        } else if (repo == "consensys/teku") {
-            result = {
-                indentation: "4",
-                updatedLine: "image: consensys/teku:${TEKU_VERSION:-23.4.0}",
-            }
-        } else if (repo == "prom/prometheus") {
-            result = {
-                indentation: "4",
-                updatedLine:
-                    "image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}",
-            }
-        } else if (repo == "grafana/grafana") {
-            result = {
-                indentation: "4",
-                updatedLine: "image: grafana/grafana:${GRAFANA_VERSION:-9.5.1}",
-            }
-        } else if (repo == "prom/node_exporter") {
-            result = {
-                indentation: "4",
-                updatedLine:
-                    "image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.5.0}",
-            }
-        } else if (repo == "jaegertracing/all-in-one") {
-            result = {
-                indentation: "4",
-                updatedLine:
-                    "image: jaegertracing/all-in-one:${JAEGAR_VERSION:-1.44.0}",
-            }
-        } else {
-            return
-        }
-    } else {
-        result = await sendToOpenAI(prompt)
-    }
+    const result =
+        process.env.ENV == "dev"
+            ? devVariables.updateDockerComposeFile[repo]
+            : await sendToOpenAI(prompt)
 
     const indentationSpaces = " ".repeat(Number(result.indentation))
     const updatedLine = indentationSpaces + result.updatedLine
@@ -210,25 +186,6 @@ async function updateDockerComposeFile(
 
     const updatedData = lines.join("\n")
     fs.writeFileSync(composeFilePath, updatedData)
-
-    // Commit the changes
-    execSync(
-        `cd ${mainRepoPath} && git add . && git commit --quiet -m "Update ${repo} to ${latestImageVersion}"`,
-        { stdio: "inherit" }
-    )
-
-    // Push the branch
-    // execSync(`cd ${mainRepoPath} && git push -u origin ${branchName}`, {
-    //     stdio: "inherit",
-    // })
-
-    // Create a PR
-    // Use the GitHub API to create a PR
-    // https://docs.github.com/en/rest/reference/pulls#create-a-pull-request
-    // Include a summary of the changes made in the description of the PR
-    // Include a summary of the release notes from the github release page in the description of the PR
-    // If I tag myself, will I be notified of the PR?
-    // Since I'm the one creating the PR, I don't think I'll be notified, but I want to be
 }
 
 // Check if a branch with the specified name exists
@@ -250,6 +207,7 @@ function checkIfBranchExists(mainRepoPath, repoName, updatedLine) {
 }
 
 async function main() {
+    // Set constants
     const mainRepoPath = path.resolve(
         __dirname,
         "charon-distributed-validator-cluster"
@@ -287,14 +245,20 @@ async function main() {
         )
 
         if (latestImageVersion != currentImageVersion && !prExists) {
+            console.log(
+                `Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`
+            )
+
+            await checkoutNewBranch(repo, latestImageVersion, mainRepoPath)
             await updateDockerComposeFile(
-                mainRepoPath,
                 repo,
                 latestImageVersion,
                 currentImageVersion,
                 composeFilePath,
                 composeFileContents
             )
+            await commitAndPushChanges(mainRepoPath, repo, latestImageVersion)
+            await createPullRequest()
         }
     }
 }
