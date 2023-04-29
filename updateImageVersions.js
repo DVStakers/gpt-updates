@@ -91,9 +91,7 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
 // ************************************************
 // Check if a branch with the specified name exists
 // ************************************************
-function checkIfBranchExists(mainRepoPath, repoName, updatedLine) {
-    const branchName = `update-${repoName}-${updatedLine}`
-
+function checkIfBranchExists(mainRepoPath, branchName) {
     try {
         const branches = execSync(`cd ${mainRepoPath} && git branch`, {
             encoding: "utf-8",
@@ -111,10 +109,8 @@ function checkIfBranchExists(mainRepoPath, repoName, updatedLine) {
 // ******************************************
 // Checkout a new branch for the image update
 // ******************************************
-async function checkoutNewBranch(repo, latestImageVersion, mainRepoPath) {
+async function checkoutNewBranch(mainRepoPath, branchName) {
     // Create and checkout a new branch for the update
-    const branchName = `update-${repo}-${latestImageVersion}`
-
     execSync(`cd ${mainRepoPath} && git checkout --quiet main && git checkout --quiet -b ${branchName}`, {
         stdio: "inherit",
     })
@@ -153,33 +149,53 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
 // ********************************************************
 // Commit and push the changes to the new branch on GitHub
 // ********************************************************
-async function commitAndPushChanges(mainRepoPath, repo, latestImageVersion) {
+async function commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName) {
     // Commit the changes
     execSync(`cd ${mainRepoPath} && git add . && git commit --quiet -m "Update ${repo} to ${latestImageVersion}"`, { stdio: "inherit" })
 
     // Push the branch
-    // execSync(`cd ${mainRepoPath} && git push -u origin ${branchName}`, {
-    //     stdio: "inherit",
-    // })
+    try {
+        console.log(`Pushing branch ${branchName} to GitHub`)
+        execSync(`cd ${mainRepoPath} && git push --quiet -u origin ${branchName} > /dev/null 2>&1`)
+    } catch (error) {
+        console.error(error)
+    }
 }
 
 // ******************************************************
 // Create a pull request on GitHub to merge the new branch
 // ******************************************************
-async function createPullRequest() {
-    // TODO: Create a PR
-    // Use the GitHub API to create a PR
-    // https://docs.github.com/en/rest/reference/pulls#create-a-pull-request
-    // Include a summary of the changes made in the description of the PR
-    // Include a summary of the release notes from the github release page in the description of the PR
-    // If I tag myself, will I be notified of the PR?
-    // Since I'm the one creating the PR, I don't think I'll be notified, but I want to be
+async function createPullRequest(repo, branchName) {
+    const owner = process.env.GITHUB_USERNAME
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
+    const prTitle = "Title test"
+    const prBody = "Description test"
+    const data = {
+        title: prTitle,
+        body: prBody,
+        head: branchName,
+        base: "main",
+    }
+
+    console.log("apiUrl:", apiUrl)
+
+    try {
+        const response = await axios.post(apiUrl, data, {
+            headers: {
+                Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+        })
+        console.log("Pull request created:", response.data.html_url)
+    } catch (error) {
+        console.error("Error creating pull request:", error.response.data)
+    }
 }
 
 async function main() {
     // Set constants
-    const mainRepoPath = path.resolve(__dirname, "charon-distributed-validator-cluster")
-    const mainRepoURL = "https://github.com/DVStakers/charon-distributed-validator-cluster.git"
+    const mainRepoPath = path.resolve(__dirname, process.env.MAIN_REPO_PATH)
+    const mainRepoURL = process.env.MAIN_REPO_URL
 
     const composeFilePath = path.join(mainRepoPath, "docker-compose.yml")
 
@@ -197,15 +213,16 @@ async function main() {
     for (const repo in imageVersions) {
         const currentImageVersion = imageVersions[repo]
         const latestImageVersion = await getLatestImageVersion(repo, currentImageVersion)
-        const prExists = checkIfBranchExists(mainRepoPath, repo, latestImageVersion)
+        const branchName = `update-${repo}-${latestImageVersion}`
+        const prExists = checkIfBranchExists(mainRepoPath, branchName)
 
         if (latestImageVersion != currentImageVersion && !prExists) {
             console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`)
 
-            await checkoutNewBranch(repo, latestImageVersion, mainRepoPath)
+            await checkoutNewBranch(mainRepoPath, branchName)
             await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
-            await commitAndPushChanges(mainRepoPath, repo, latestImageVersion)
-            await createPullRequest()
+            await commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName)
+            await createPullRequest(process.env.MAIN_REPO_PATH, branchName)
 
             // Return to main branch
             execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {

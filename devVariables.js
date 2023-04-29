@@ -1,13 +1,17 @@
 module.exports = {
     getCurrentImageVersions: `{
                 "obolnetwork/charon": "v0.15.0",
-                "sigp/lighthouse": "v4.0.2-rc.0",
-                "consensys/teku": "23.3.1",
-                "prom/prometheus": "v2.41.0",
-                "grafana/grafana": "9.3.2",
-                "prom/node-exporter": "v1.5.0",
-                "jaegertracing/all-in-one": "1.41.0"
+                "sigp/lighthouse": "v4.0.2-rc.0"
                 }`,
+    // getCurrentImageVersions: `{
+    //             "obolnetwork/charon": "v0.15.0",
+    //             "sigp/lighthouse": "v4.0.2-rc.0",
+    //             "consensys/teku": "23.3.1",
+    //             "prom/prometheus": "v2.41.0",
+    //             "grafana/grafana": "9.3.2",
+    //             "prom/node-exporter": "v1.5.0",
+    //             "jaegertracing/all-in-one": "1.41.0"
+    //             }`,
     getLatestImageVersion: {
         "obolnetwork/charon": "v0.15.0",
         "sigp/lighthouse": "v4.1.0",
@@ -41,8 +45,7 @@ module.exports = {
         },
         "prom/prometheus": {
             indentation: "4",
-            updatedLine:
-                "image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}",
+            updatedLine: "image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}",
         },
         "grafana/grafana": {
             indentation: "4",
@@ -50,13 +53,11 @@ module.exports = {
         },
         "prom/node_exporter": {
             indentation: "4",
-            updatedLine:
-                "image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.5.0}",
+            updatedLine: "image: prom/node-exporter:${NODE_EXPORTER_VERSION:-v1.5.0}",
         },
         "jaegertracing/all-in-one": {
             indentation: "4",
-            updatedLine:
-                "image: jaegertracing/all-in-one:${JAEGAR_VERSION:-1.44.0}",
+            updatedLine: "image: jaegertracing/all-in-one:${JAEGAR_VERSION:-1.44.0}",
         },
     },
 }
