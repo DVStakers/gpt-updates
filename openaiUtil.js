@@ -13,7 +13,7 @@ async function sendToOpenAI(prompt) {
         const response = await openai.createCompletion({
             model: "text-davinci-003",
             prompt: prompt,
-            max_tokens: 50, // Max number of tokens to generate
+            max_tokens: 1000, // Max number of tokens to generate
             temperature: 0, // Make the output deterministic
         })
         return response.data.choices[0].text.trim()

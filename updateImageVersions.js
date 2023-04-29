@@ -1,5 +1,6 @@
 require("dotenv").config()
 const axios = require("axios")
+const cheerio = require("cheerio")
 const { sendToOpenAI } = require("./openaiUtil")
 const { execSync } = require("child_process")
 const fs = require("fs")
@@ -163,21 +164,53 @@ async function commitAndPushChanges(mainRepoPath, repo, latestImageVersion, bran
 }
 
 // ******************************************************
-// Create a pull request on GitHub to merge the new branch
+// Create a summary of the release notes for the PR body
 // ******************************************************
-async function createPullRequest(repo, branchName) {
-    const owner = process.env.GITHUB_USERNAME
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
-    const prTitle = "Title test"
-    const prBody = "Description test"
+async function getReleaseNoteSummary(composeFileContents, repo, releaseNotes) {
+    //TODO: This is the prompt I want to use, but it's too long for the current model (text-davinci-003)
+    // const prompt = `Here is a docker-compose.yml file:\n\n${composeFileContents}\n\nAnd here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the release notes for a PR description for updating that docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact the current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
+
+    // This is the prompt I'm using for now, but it's not as good as it doesn't include the docker-compose.yml file contents so is less specific
+    const prompt = `Here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the important release notes for a PR description for updating a docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
+
+    const result = await sendToOpenAI(prompt)
+    return result
+}
+
+// ****************************************************
+// Create the body of the PR based on the updated files
+// ****************************************************
+async function createPullRequestBody(repo, composeFileContents) {
+    gitHubURL = await getGitHubRepoURL(repo)
+
+    try {
+        const url = `${gitHubURL}/releases/latest`
+        const response = await axios.get(url)
+        const html = response.data
+
+        const $ = cheerio.load(html)
+        const bodyContent = $('[data-test-selector="body-content"]').text().trim()
+
+        return await getReleaseNoteSummary(composeFileContents, repo, bodyContent)
+    } catch (error) {
+        console.error("Error extracting release notes:", error.message)
+    }
+}
+
+// ********************************************************
+// Create a pull request on GitHub to merge the new branch
+// ********************************************************
+async function createPullRequest(mainRepo, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents) {
+    const owner = process.env.GITHUB_MAIN_USERNAME
+    const apiUrl = `https://api.github.com/repos/${owner}/${mainRepo}/pulls`
+    const prTitle = `GPT - Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`
+    const prBody = await createPullRequestBody(repo, composeFileContents)
     const data = {
         title: prTitle,
         body: prBody,
         head: branchName,
         base: "main",
     }
-
-    console.log("apiUrl:", apiUrl)
 
     try {
         const response = await axios.post(apiUrl, data, {
@@ -187,8 +220,31 @@ async function createPullRequest(repo, branchName) {
             },
         })
         console.log("Pull request created:", response.data.html_url)
+        await addReviewer(mainRepo, response.data.number)
     } catch (error) {
         console.error("Error creating pull request:", error.response.data)
+    }
+}
+
+// *********************************************
+// Add a reviewer to the pull request on GitHub
+// *********************************************
+async function addReviewer(mainRepo, pullRequestNumber) {
+    const owner = process.env.GITHUB_MAIN_USERNAME
+    const apiUrl = `https://api.github.com/repos/${owner}/${mainRepo}/pulls/${pullRequestNumber}/requested_reviewers`
+    const data = {
+        reviewers: [process.env.GITHUB_MAIN_USERNAME],
+    }
+
+    try {
+        await axios.post(apiUrl, data, {
+            headers: {
+                Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+            },
+        })
+    } catch (error) {
+        console.error("Error adding reviewer to pull request:", error.response.data)
     }
 }
 
@@ -222,12 +278,18 @@ async function main() {
             await checkoutNewBranch(mainRepoPath, branchName)
             await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
             await commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName)
-            await createPullRequest(process.env.MAIN_REPO_PATH, branchName)
+            await createPullRequest(process.env.MAIN_REPO_PATH, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
 
             // Return to main branch
             execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
                 stdio: "inherit",
             })
+        } else {
+            if (prExists) {
+                console.log(`Pull request already exists for ${repo}: ${branchName}`)
+            } else {
+                console.log(`No update needed for ${repo}`)
+            }
         }
     }
 }
