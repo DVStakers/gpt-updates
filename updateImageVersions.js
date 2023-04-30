@@ -90,38 +90,6 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
     }
 }
 
-// ************************************************
-// Check if a branch with the specified name exists
-// ************************************************
-async function checkIfPrExists(owner, repo, branchName) {
-    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
-
-    try {
-        const response = await axios.get(apiUrl, {
-            params: {
-                head: `${owner}:${branchName}`,
-                state: "all",
-            },
-            headers: {
-                Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
-            },
-        })
-
-        const pullRequests = response.data
-
-        for (const pr of pullRequests) {
-            if (pr.state === "open" || pr.state === "merged") {
-                return true
-            }
-        }
-
-        return false
-    } catch (error) {
-        console.error("Error checking pull request:", error.response.data)
-        return false
-    }
-}
-
 // ******************************************
 // Checkout a new branch for the image update
 // ******************************************
@@ -215,9 +183,9 @@ async function createPullRequestBody(repo, composeFileContents) {
     }
 }
 
-// ********************************************************
-// Create a pull request on GitHub to merge the new branch
-// ********************************************************
+// **********************************************
+// Create a PR on GitHub to merge the new branch
+// **********************************************
 async function createPullRequest(mainRepo, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents) {
     const owner = process.env.GITHUB_MAIN_USERNAME
     const apiUrl = `https://api.github.com/repos/${owner}/${mainRepo}/pulls`
@@ -232,23 +200,23 @@ async function createPullRequest(mainRepo, branchName, repo, currentImageVersion
     }
 
     try {
-        console.log(`Creating pull request for branch ${branchName}...`)
+        console.log(`Creating PR for branch ${branchName}...`)
         const response = await axios.post(apiUrl, data, {
             headers: {
                 Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
                 "Content-Type": "application/json",
             },
         })
-        console.log("Pull request created:", response.data.html_url)
+        console.log("PR created:", response.data.html_url)
         await addReviewer(mainRepo, response.data.number)
     } catch (error) {
-        console.error("Error creating pull request:", error.response.data)
+        console.error("Error creating PR:", error.response.data)
     }
 }
 
-// *********************************************
-// Add a reviewer to the pull request on GitHub
-// *********************************************
+// ***********************************
+// Add a reviewer to the PR on GitHub
+// ***********************************
 async function addReviewer(mainRepo, pullRequestNumber) {
     const owner = process.env.GITHUB_MAIN_USERNAME
     const apiUrl = `https://api.github.com/repos/${owner}/${mainRepo}/pulls/${pullRequestNumber}/requested_reviewers`
@@ -264,7 +232,7 @@ async function addReviewer(mainRepo, pullRequestNumber) {
             },
         })
     } catch (error) {
-        console.error("Error adding reviewer to pull request:", error.response.data)
+        console.error("Error adding reviewer to PR:", error.response.data)
     }
 }
 
@@ -274,6 +242,38 @@ async function checkIfLocalBranchExists(mainRepoPath, branchName) {
 
 async function checkIfRemoteBranchExists(mainRepoPath, branchName) {
     return execSync(`cd ${mainRepoPath} && git ls-remote --heads origin ${branchName}`, { encoding: "utf-8" }).trim().length > 0
+}
+
+// ************************************************
+// Check if a branch with the specified name exists
+// ************************************************
+async function checkIfPrExists(owner, repo, branchName) {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
+
+    try {
+        const response = await axios.get(apiUrl, {
+            params: {
+                head: `${owner}:${branchName}`,
+                state: "all",
+            },
+            headers: {
+                Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
+            },
+        })
+
+        const pullRequests = response.data
+
+        for (const pr of pullRequests) {
+            if (pr.state === "open" || pr.state === "merged") {
+                return true
+            }
+        }
+
+        return false
+    } catch (error) {
+        console.error("Error checking PR:", error.response.data)
+        return false
+    }
 }
 
 async function main() {
@@ -307,9 +307,9 @@ async function main() {
         const remoteBranchExists = await checkIfRemoteBranchExists(mainRepoPath, branchName)
         const prExists = await checkIfPrExists(mainRepoOwner, process.env.MAIN_REPO_NAME, branchName)
 
+        // If the latest image version is different than the current image version, and there is no PR
         if (latestImageVersion != currentImageVersion && !prExists) {
             console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}...`)
-
             if (remoteBranchExists) {
                 // If a remote branch exists, but no PR, create the PR
                 await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
@@ -327,22 +327,13 @@ async function main() {
                 await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
             }
 
-            // else if local branch exists, but no remote branch, push the local branch to remote and create the PR
-
-            // If the branch doesn't exist, create it
-            // if (!localBranchExists && !remoteBranchExists) {
-            //     await checkoutNewBranch(mainRepoPath, branchName)
-            //     await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
-            //     await commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName)
-            // }
-
             // Return to main branch
             execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
                 stdio: "inherit",
             })
         } else {
             if (prExists) {
-                console.log(`Pull request already exists for ${repo}: ${branchName}`)
+                console.log(`PR already exists for ${repo}: ${branchName}`)
             } else {
                 console.log(`No update needed for ${repo}`)
             }
