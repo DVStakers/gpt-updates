@@ -12,12 +12,13 @@ const devVariables = require("./devVariables")
 // Clone a repository if it doesn't exist
 // **************************************
 function cloneRepo(repoUrl, mainRepoPath) {
-    console.log("Checking if repository exists...")
+    console.log(`Checking if ${process.env.MAIN_REPO_NAME} repository exists in local environment...`)
     if (fs.existsSync(mainRepoPath)) {
         console.log("Repository already exists. Pulling latest changes...")
         execSync(`cd ${mainRepoPath} && git checkout --quiet main && git pull --quiet`, {
             stdio: "inherit",
         })
+        console.log("Repo up-to-date.")
         console.log()
     } else {
         console.log("Cloning repository...")
@@ -92,17 +93,31 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
 // ************************************************
 // Check if a branch with the specified name exists
 // ************************************************
-function checkIfBranchExists(mainRepoPath, branchName) {
+async function checkIfPrExists(owner, repo, branchName) {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
+
     try {
-        const branches = execSync(`cd ${mainRepoPath} && git branch`, {
-            encoding: "utf-8",
+        const response = await axios.get(apiUrl, {
+            params: {
+                head: `${owner}:${branchName}`,
+                state: "all",
+            },
+            headers: {
+                Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
+            },
         })
 
-        const branchList = branches.split("\n").map((branch) => branch.trim())
+        const pullRequests = response.data
 
-        return branchList.includes(branchName)
+        for (const pr of pullRequests) {
+            if (pr.state === "open" || pr.state === "merged") {
+                return true
+            }
+        }
+
+        return false
     } catch (error) {
-        console.error(`Error checking for branch existence: ${error.message}`)
+        console.error("Error checking pull request:", error.response.data)
         return false
     }
 }
@@ -147,16 +162,19 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
     fs.writeFileSync(composeFilePath, updatedData)
 }
 
-// ********************************************************
-// Commit and push the changes to the new branch on GitHub
-// ********************************************************
-async function commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName) {
-    // Commit the changes
+// ***************
+// Commit changes
+// ***************
+async function commitChanges(mainRepoPath, repo, latestImageVersion) {
     execSync(`cd ${mainRepoPath} && git add . && git commit --quiet -m "Update ${repo} to ${latestImageVersion}"`, { stdio: "inherit" })
+}
 
-    // Push the branch
+// *********************************************
+// Push the changes to the new branch on GitHub
+// *********************************************
+async function pushChanges(mainRepoPath, branchName) {
     try {
-        console.log(`Pushing branch ${branchName} to GitHub`)
+        console.log(`Pushing branch ${branchName} to GitHub...`)
         execSync(`cd ${mainRepoPath} && git push --quiet -u origin ${branchName} > /dev/null 2>&1`)
     } catch (error) {
         console.error(error)
@@ -173,8 +191,8 @@ async function getReleaseNoteSummary(composeFileContents, repo, releaseNotes) {
     // This is the prompt I'm using for now, but it's not as good as it doesn't include the docker-compose.yml file contents so is less specific
     const prompt = `Here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the important release notes for a PR description for updating a docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
 
-    const result = await sendToOpenAI(prompt)
-    return result
+    console.log(`Getting latest release note summary for ${repo}...`)
+    return process.env.ENV == "dev" ? "Test description" : await sendToOpenAI(prompt)
 }
 
 // ****************************************************
@@ -205,6 +223,7 @@ async function createPullRequest(mainRepo, branchName, repo, currentImageVersion
     const apiUrl = `https://api.github.com/repos/${owner}/${mainRepo}/pulls`
     const prTitle = `GPT - Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`
     const prBody = await createPullRequestBody(repo, composeFileContents)
+
     const data = {
         title: prTitle,
         body: prBody,
@@ -213,6 +232,7 @@ async function createPullRequest(mainRepo, branchName, repo, currentImageVersion
     }
 
     try {
+        console.log(`Creating pull request for branch ${branchName}...`)
         const response = await axios.post(apiUrl, data, {
             headers: {
                 Authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
@@ -248,11 +268,19 @@ async function addReviewer(mainRepo, pullRequestNumber) {
     }
 }
 
+async function checkIfLocalBranchExists(mainRepoPath, branchName) {
+    return execSync(`cd ${mainRepoPath} && git branch --list ${branchName}`, { encoding: "utf-8" }).trim().length > 0
+}
+
+async function checkIfRemoteBranchExists(mainRepoPath, branchName) {
+    return execSync(`cd ${mainRepoPath} && git ls-remote --heads origin ${branchName}`, { encoding: "utf-8" }).trim().length > 0
+}
+
 async function main() {
     // Set constants
-    const mainRepoPath = path.resolve(__dirname, process.env.MAIN_REPO_PATH)
+    const mainRepoOwner = process.env.GITHUB_MAIN_USERNAME
+    const mainRepoPath = path.resolve(__dirname, process.env.MAIN_REPO_NAME)
     const mainRepoURL = process.env.MAIN_REPO_URL
-
     const composeFilePath = path.join(mainRepoPath, "docker-compose.yml")
 
     // Clone the main repo from GitHub
@@ -267,18 +295,46 @@ async function main() {
     // For each image, check if there is a newer version
     // and if there is, update the docker-compose.yml file
     for (const repo in imageVersions) {
+        console.log("*".repeat(repo.length + 1))
+        console.log(repo)
+        console.log("*".repeat(repo.length + 1))
+
         const currentImageVersion = imageVersions[repo]
         const latestImageVersion = await getLatestImageVersion(repo, currentImageVersion)
         const branchName = `update-${repo}-${latestImageVersion}`
-        const prExists = checkIfBranchExists(mainRepoPath, branchName)
+
+        const localBranchExists = await checkIfLocalBranchExists(mainRepoPath, branchName)
+        const remoteBranchExists = await checkIfRemoteBranchExists(mainRepoPath, branchName)
+        const prExists = await checkIfPrExists(mainRepoOwner, process.env.MAIN_REPO_NAME, branchName)
 
         if (latestImageVersion != currentImageVersion && !prExists) {
-            console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}`)
+            console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}...`)
 
-            await checkoutNewBranch(mainRepoPath, branchName)
-            await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
-            await commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName)
-            await createPullRequest(process.env.MAIN_REPO_PATH, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
+            if (remoteBranchExists) {
+                // If a remote branch exists, but no PR, create the PR
+                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
+            } else if (!localBranchExists) {
+                // Since a remote branch doesn't exist, and a local branch doesn't exist,
+                // create the branch, update the file, commit, push, and create the PR
+                await checkoutNewBranch(mainRepoPath, branchName)
+                await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
+                await commitChanges(mainRepoPath, repo, latestImageVersion)
+                await pushChanges(mainRepoPath, branchName)
+                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
+            } else if (localBranchExists) {
+                // If a local branch already exists, but no remote branch, push the local branch to remote and create the PR
+                await pushChanges(mainRepoPath, branchName)
+                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
+            }
+
+            // else if local branch exists, but no remote branch, push the local branch to remote and create the PR
+
+            // If the branch doesn't exist, create it
+            // if (!localBranchExists && !remoteBranchExists) {
+            //     await checkoutNewBranch(mainRepoPath, branchName)
+            //     await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
+            //     await commitAndPushChanges(mainRepoPath, repo, latestImageVersion, branchName)
+            // }
 
             // Return to main branch
             execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
@@ -291,6 +347,7 @@ async function main() {
                 console.log(`No update needed for ${repo}`)
             }
         }
+        console.log()
     }
 }
 

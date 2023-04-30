@@ -5,7 +5,7 @@ module.exports = {
     //             }`,
     getCurrentImageVersions: `{
                 "obolnetwork/charon": "v0.15.0",
-                "sigp/lighthouse": "v4.0.2-rc.0",
+                "sigp/lighthouse": "v4.1.0",
                 "consensys/teku": "23.3.1",
                 "prom/prometheus": "v2.41.0",
                 "grafana/grafana": "9.3.2",
