@@ -1,11 +1,11 @@
 require("dotenv").config()
-const axios = require("axios")
-const cheerio = require("cheerio")
-const { sendToOpenAI } = require("./openaiUtil")
-const { execSync } = require("child_process")
 const fs = require("fs")
 const path = require("path")
+const axios = require("axios")
+const cheerio = require("cheerio")
+const { execSync } = require("child_process")
 
+const { sendToOpenAI } = require("./openaiUtil")
 const devVariables = require("./devVariables")
 
 // **************************************
@@ -71,7 +71,6 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
                 return (status >= 200 && status < 400) || status === 302
             },
         })
-
         const redirectedUrl = response.headers.location
 
         // Ask ChatGPT to compare the current version with that URL to see which is newer
@@ -94,18 +93,19 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
 // Checkout a new branch for the image update
 // ******************************************
 async function checkoutNewBranch(mainRepoPath, branchName) {
-    // Create and checkout a new branch for the update
-    execSync(`cd ${mainRepoPath} && git checkout --quiet main && git checkout --quiet -b ${branchName}`, {
-        stdio: "inherit",
-    })
+    console.log(`Creating new branch ${branchName}...`)
+    execSync(`cd ${mainRepoPath} && git checkout --quiet main && git checkout --quiet -b ${branchName}`, { stdio: "inherit" })
 }
 
 // *********************************************************
 // Update the docker-compose.yml file with new image versions
 // *********************************************************
 async function updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents) {
+    console.log(`Updating docker-compose.yml image for ${repo}...`)
+
     // Make changes to the docker-compose.yml file
     // This is simple line replacement for now to avoid returning the whole file
+    // TODO: Simplify this step by asking return the whole file (I think that will require gpt-4)
     const prompt = `Change the default version of the image ${repo} from ${currentImageVersion} to ${latestImageVersion}. Keep all the other content of the line identical, only change the version, ensure that all the other content remains the same. I don't want you to return the entire file, because it's too big. Only respond with the number of spaces to indent the line and the contents of the changed line. Don't provide any text other than the number of spaces to indent (as a string e.g. "4") the line and the contents of the changed line in the format:\n\n{"indentation": "<NUMBER_OF_SPACES>", "updatedLine": "{CHANGED_LINE_CONTENT"}\n\n${composeFileContents}`
 
     // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
@@ -118,6 +118,7 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
     const updatedLine = indentationSpaces + resultObject.updatedLine
 
     const lines = composeFileContents.split("\n")
+    // TODO: This shouldn't be hardcoded as I should ask ChatGPT to find the line
     const targetLine = `image: ${repo}:`
     for (let i = 0; i < lines.length; i++) {
         if (lines[i].includes(targetLine) && lines[i].includes(currentImageVersion)) {
@@ -125,7 +126,6 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
             break
         }
     }
-
     const updatedData = lines.join("\n")
     fs.writeFileSync(composeFilePath, updatedData)
 }
@@ -134,6 +134,7 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
 // Commit changes
 // ***************
 async function commitChanges(mainRepoPath, repo, latestImageVersion) {
+    console.log(`Committing changes to local branch...`)
     execSync(`cd ${mainRepoPath} && git add . && git commit --quiet -m "Update ${repo} to ${latestImageVersion}"`, { stdio: "inherit" })
 }
 
@@ -146,6 +147,18 @@ async function pushChanges(mainRepoPath, branchName) {
         execSync(`cd ${mainRepoPath} && git push --quiet -u origin ${branchName} > /dev/null 2>&1`)
     } catch (error) {
         console.error(error)
+    }
+}
+
+// ********************
+// Delete local branch
+// ********************
+async function deleteLocalBranch(mainRepoPath, branchName) {
+    const branchExists = await checkIfLocalBranchExists(mainRepoPath, branchName)
+
+    if (branchExists) {
+        console.log(`Deleting local branch ${branchName}...`)
+        execSync(`cd ${mainRepoPath} && git checkout --quiet main && git branch --quiet -D ${branchName} 2>/dev/null`, { stdio: "inherit" })
     }
 }
 
@@ -175,6 +188,7 @@ async function createPullRequestBody(repo, composeFileContents) {
         const html = response.data
 
         const $ = cheerio.load(html)
+        // TODO: Hardcoded for now, but should be able to find this automatically
         const bodyContent = $('[data-test-selector="body-content"]').text().trim()
 
         return await getReleaseNoteSummary(composeFileContents, repo, bodyContent)
@@ -236,17 +250,23 @@ async function addReviewer(mainRepo, pullRequestNumber) {
     }
 }
 
+// *****************************
+// Check if local branch exists
+// *****************************
 async function checkIfLocalBranchExists(mainRepoPath, branchName) {
     return execSync(`cd ${mainRepoPath} && git branch --list ${branchName}`, { encoding: "utf-8" }).trim().length > 0
 }
 
+// ****************************************
+// Check if remote branch exists on GitHub
+// ****************************************
 async function checkIfRemoteBranchExists(mainRepoPath, branchName) {
     return execSync(`cd ${mainRepoPath} && git ls-remote --heads origin ${branchName}`, { encoding: "utf-8" }).trim().length > 0
 }
 
-// ************************************************
-// Check if a branch with the specified name exists
-// ************************************************
+// *************************************
+// Check if PR already exists on GitHub
+// *************************************
 async function checkIfPrExists(owner, repo, branchName) {
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}/pulls`
 
@@ -276,6 +296,9 @@ async function checkIfPrExists(owner, repo, branchName) {
     }
 }
 
+// **************
+// MAIN FUNCTION
+// **************
 async function main() {
     // Set constants
     const mainRepoOwner = process.env.GITHUB_MAIN_USERNAME
@@ -302,8 +325,6 @@ async function main() {
         const currentImageVersion = imageVersions[repo]
         const latestImageVersion = await getLatestImageVersion(repo, currentImageVersion)
         const branchName = `update-${repo}-${latestImageVersion}`
-
-        const localBranchExists = await checkIfLocalBranchExists(mainRepoPath, branchName)
         const remoteBranchExists = await checkIfRemoteBranchExists(mainRepoPath, branchName)
         const prExists = await checkIfPrExists(mainRepoOwner, process.env.MAIN_REPO_NAME, branchName)
 
@@ -311,21 +332,17 @@ async function main() {
         if (latestImageVersion != currentImageVersion && !prExists) {
             console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}...`)
             if (remoteBranchExists) {
-                // If a remote branch exists, but no PR, create the PR
-                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
-            } else if (!localBranchExists) {
-                // Since a remote branch doesn't exist, and a local branch doesn't exist,
-                // create the branch, update the file, commit, push, and create the PR
+                console.log("Remote branch exists, but no PR.")
+            } else {
+                await deleteLocalBranch(mainRepoPath, branchName)
                 await checkoutNewBranch(mainRepoPath, branchName)
                 await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
                 await commitChanges(mainRepoPath, repo, latestImageVersion)
                 await pushChanges(mainRepoPath, branchName)
-                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
-            } else if (localBranchExists) {
-                // If a local branch already exists, but no remote branch, push the local branch to remote and create the PR
-                await pushChanges(mainRepoPath, branchName)
-                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
             }
+
+            // Create the PR
+            await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
 
             // Return to main branch
             execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
