@@ -8,9 +8,9 @@ const { execSync } = require("child_process")
 const { sendToOpenAI } = require("./openaiUtil")
 const devVariables = require("./devVariables")
 
-// **************************************
+// ***************************************
 // Clone a repository if it doesn't exist
-// **************************************
+// ***************************************
 async function cloneRepo(repoUrl, mainRepoPath) {
     console.log(`Checking if ${process.env.MAIN_REPO_NAME} repository exists in local environment...`)
     if (fs.existsSync(mainRepoPath)) {
@@ -38,9 +38,9 @@ async function getFileFromRepo(repoPath, fileName) {
     }
 }
 
-// **********************************************************
+// ***********************************************************
 // Send a file to OpenAI for parsing of current image versions
-// **********************************************************
+// ***********************************************************
 async function getCurrentImageVersions(fileContents) {
     const prompt = `Read this docker-compose.yml file and find all the images used and the default versions that have been set. Don't include any results that aren't directly images. Only respond with the result in a json object format. Provide no text other than the direct json object result so that I can parse your response directly in my node.js script.\n\n${fileContents}`
 
@@ -89,17 +89,17 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
     }
 }
 
-// ******************************************
+// *******************************************
 // Checkout a new branch for the image update
-// ******************************************
+// *******************************************
 async function checkoutNewBranch(mainRepoPath, branchName) {
     console.log(`Creating new branch ${branchName}...`)
     execSync(`cd ${mainRepoPath} && git checkout --quiet main && git checkout --quiet -b ${branchName}`, { stdio: "inherit" })
 }
 
-// *********************************************************
+// **********************************************************
 // Update the docker-compose.yml file with new image versions
-// *********************************************************
+// **********************************************************
 async function updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents) {
     console.log(`Updating docker-compose.yml image for ${repo}...`)
 
