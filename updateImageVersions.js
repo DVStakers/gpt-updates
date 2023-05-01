@@ -5,38 +5,50 @@ const axios = require("axios")
 const cheerio = require("cheerio")
 const { execSync } = require("child_process")
 
-const { sendToOpenAI } = require("./openaiUtil")
-const devVariables = require("./devVariables")
-const { env } = require("process")
+const { sendToOpenAI } = require("./utils/openaiUtil")
+const { executeCode } = require("./utils/executeCodeUtil")
 
-// **************************************
+const devVariables = require("./devVariables")
+
+const genericPromptStart = `Write an async function for a node.js script.
+                            The code should be sequentially executed and is waited on to complete each step before continuing.
+                            The function name should be "gptResponseCode".
+                            In the code, there should be console.log statements that explain what is happening at each step.
+                            Provide no text or output other than the function code.
+                            Do not wrap the code in a code block, it should be the only text in the response.
+                            Do not call the function.\n`
+
+// ***************************************
 // Clone a repository if it doesn't exist
-// **************************************
-function cloneRepo(repoUrl, mainRepoPath) {
-    console.log(`Checking if ${process.env.MAIN_REPO_NAME} repository exists in local environment...`)
-    if (fs.existsSync(mainRepoPath)) {
-        console.log("Repository already exists. Pulling latest changes...")
-        execSync(`cd ${mainRepoPath} && git checkout --quiet main && git pull --quiet`, {
-            stdio: "inherit",
-        })
-        console.log("Repo up-to-date.")
-        console.log()
-    } else {
-        console.log("Cloning repository...")
-        execSync(`git clone ${repoUrl} ${mainRepoPath}`, { stdio: "inherit" })
-        console.log()
-    }
+// ***************************************
+async function cloneRepo(mainRepoURL, mainRepoPath) {
+    const prompt = `${genericPromptStart} Check if a repository (called ${process.env.MAIN_REPO_NAME}) exists in a local environment. 
+    
+    The repo URL is: ${mainRepoURL}
+    The repo path is: ${mainRepoPath}
+    
+    If it does already exist, the function should pull the latest changes.
+    If it doesn't exist, the repo should be cloned.`
+
+    // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
+    const generatedCode = process.env.ENV == "dev" ? devVariables.cloneRepo : devVariables.cloneRepo //await sendToOpenAI(prompt)
+    return await executeCode(generatedCode)
 }
 
 // ****************************
 // Get a file from a local repo
 // ****************************
 async function getFileFromRepo(repoPath, fileName) {
-    try {
-        return fs.readFileSync(path.join(repoPath, fileName), "utf-8")
-    } catch (error) {
-        console.error(`Error reading ${fileName}:`, error)
-    }
+    const prompt = `${genericPromptStart} Return the contents of a file from a local repository.
+
+    The repo path is: ${repoPath}
+    The file name is: ${fileName}
+    
+    The function should return the file contents, but not log it to the console.`
+
+    // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
+    const generatedCode = process.env.ENV == "dev" ? devVariables.getFileFromRepo : devVariables.getFileFromRepo //await sendToOpenAI(prompt)
+    return await executeCode(generatedCode)
 }
 
 // **********************************************************
@@ -305,16 +317,15 @@ async function main() {
     const mainRepoOwner = process.env.GITHUB_MAIN_USERNAME
     const mainRepoPath = path.resolve(__dirname, "repos", process.env.MAIN_REPO_NAME)
 
-    console.log("mainRepoPath: ", mainRepoPath)
-
     const mainRepoURL = process.env.MAIN_REPO_URL
     const composeFilePath = path.join(mainRepoPath, "docker-compose.yml")
 
     // Clone the main repo from GitHub
-    cloneRepo(mainRepoURL, mainRepoPath)
+    await cloneRepo(mainRepoURL, mainRepoPath)
 
     // Read the docker-compose.yml file
     const composeFileContents = await getFileFromRepo(mainRepoPath, "docker-compose.yml")
+    return
 
     // Get the current image versions
     const imageVersions = JSON.parse(await getCurrentImageVersions(composeFileContents))
