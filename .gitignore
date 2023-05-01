@@ -1,5 +1,4 @@
 .env
 node_modules/
 
-charon-distributed-validator-cluster/
-test-gpt/
+repos/

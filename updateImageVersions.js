@@ -7,6 +7,7 @@ const { execSync } = require("child_process")
 
 const { sendToOpenAI } = require("./openaiUtil")
 const devVariables = require("./devVariables")
+const { env } = require("process")
 
 // **************************************
 // Clone a repository if it doesn't exist
@@ -302,7 +303,10 @@ async function checkIfPrExists(owner, repo, branchName) {
 async function main() {
     // Set constants
     const mainRepoOwner = process.env.GITHUB_MAIN_USERNAME
-    const mainRepoPath = path.resolve(__dirname, process.env.MAIN_REPO_NAME)
+    const mainRepoPath = path.resolve(__dirname, "repos", process.env.MAIN_REPO_NAME)
+
+    console.log("mainRepoPath: ", mainRepoPath)
+
     const mainRepoURL = process.env.MAIN_REPO_URL
     const composeFilePath = path.join(mainRepoPath, "docker-compose.yml")
 

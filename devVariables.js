@@ -1,8 +1,4 @@
 module.exports = {
-    // getCurrentImageVersions: `{
-    //             "obolnetwork/charon": "v0.15.0",
-    //             "sigp/lighthouse": "v4.0.2-rc.0"
-    //             }`,
     getCurrentImageVersions: `{
                 "obolnetwork/charon": "v0.15.0",
                 "sigp/lighthouse": "v4.1.0",
