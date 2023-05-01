@@ -7,12 +7,11 @@ const { execSync } = require("child_process")
 
 const { sendToOpenAI } = require("./openaiUtil")
 const devVariables = require("./devVariables")
-const { env } = require("process")
 
 // **************************************
 // Clone a repository if it doesn't exist
 // **************************************
-function cloneRepo(repoUrl, mainRepoPath) {
+await function cloneRepo(repoUrl, mainRepoPath) {
     console.log(`Checking if ${process.env.MAIN_REPO_NAME} repository exists in local environment...`)
     if (fs.existsSync(mainRepoPath)) {
         console.log("Repository already exists. Pulling latest changes...")
@@ -305,13 +304,11 @@ async function main() {
     const mainRepoOwner = process.env.GITHUB_MAIN_USERNAME
     const mainRepoPath = path.resolve(__dirname, "repos", process.env.MAIN_REPO_NAME)
 
-    console.log("mainRepoPath: ", mainRepoPath)
-
     const mainRepoURL = process.env.MAIN_REPO_URL
     const composeFilePath = path.join(mainRepoPath, "docker-compose.yml")
 
     // Clone the main repo from GitHub
-    cloneRepo(mainRepoURL, mainRepoPath)
+    await cloneRepo(mainRepoURL, mainRepoPath)
 
     // Read the docker-compose.yml file
     const composeFileContents = await getFileFromRepo(mainRepoPath, "docker-compose.yml")
