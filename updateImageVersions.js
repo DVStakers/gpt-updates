@@ -11,7 +11,7 @@ const devVariables = require("./devVariables")
 // **************************************
 // Clone a repository if it doesn't exist
 // **************************************
-await function cloneRepo(repoUrl, mainRepoPath) {
+async function cloneRepo(repoUrl, mainRepoPath) {
     console.log(`Checking if ${process.env.MAIN_REPO_NAME} repository exists in local environment...`)
     if (fs.existsSync(mainRepoPath)) {
         console.log("Repository already exists. Pulling latest changes...")
