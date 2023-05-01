@@ -11,7 +11,7 @@ const { executeCode } = require("./utils/executeCodeUtil")
 const devVariables = require("./devVariables")
 
 const genericPromptStart = `Write an async function for a node.js script.
-                            The code should be sychronous, so that each step happens sequentially and is waited on to complete.
+                            The code should be sequentially executed and is waited on to complete each step before continuing.
                             The function name should be "gptResponseCode".
                             In the code, there should be console.log statements that explain what is happening at each step.
                             Provide no text or output other than the function code.
@@ -31,7 +31,7 @@ async function cloneRepo(mainRepoURL, mainRepoPath) {
     If it doesn't exist, the repo should be cloned.`
 
     // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
-    const generatedCode = process.env.ENV == "dev" ? devVariables.cloneRepo : devVariables.cloneRepo
+    const generatedCode = process.env.ENV == "dev" ? devVariables.cloneRepo : devVariables.cloneRepo //await sendToOpenAI(prompt)
     return await executeCode(generatedCode)
 }
 
@@ -47,7 +47,7 @@ async function getFileFromRepo(repoPath, fileName) {
     The function should return the file contents, but not log it to the console.`
 
     // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
-    const generatedCode = process.env.ENV == "dev" ? devVariables.getFileFromRepo : devVariables.getFileFromRepo
+    const generatedCode = process.env.ENV == "dev" ? devVariables.getFileFromRepo : devVariables.getFileFromRepo //await sendToOpenAI(prompt)
     return await executeCode(generatedCode)
 }
 
@@ -325,7 +325,6 @@ async function main() {
 
     // Read the docker-compose.yml file
     const composeFileContents = await getFileFromRepo(mainRepoPath, "docker-compose.yml")
-    console.log("composeFileContents: \n", composeFileContents.split("\n").slice(0, 10).join("\n"))
     return
 
     // Get the current image versions
