@@ -44,8 +44,7 @@ async function getFileFromRepo(repoPath, fileName) {
 async function getCurrentImageVersions(fileContents) {
     const prompt = `Read this docker-compose.yml file and find all the images used and the default versions that have been set. Don't include any results that aren't directly images. Only respond with the result in a json object format. Provide no text other than the direct json object result so that I can parse your response directly in my node.js script.\n\n${fileContents}`
 
-    // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
-    return process.env.ENV == "dev" ? devVariables.getCurrentImageVersions : devVariables.getCurrentImageVersions //await sendToOpenAI(prompt)
+    return process.env.ENV == "dev" ? devVariables.getCurrentImageVersions : await sendToOpenAI(prompt)
 }
 
 // ***********************************************
@@ -86,6 +85,7 @@ async function getLatestImageVersion(repoName, currentImageVersion) {
         }
     } catch (error) {
         console.error(`Error: ${error.message}`)
+        return "ERROR"
     }
 }
 
@@ -106,10 +106,11 @@ async function updateDockerComposeFile(repo, latestImageVersion, currentImageVer
     // Make changes to the docker-compose.yml file
     // This is simple line replacement for now to avoid returning the whole file
     // TODO: Simplify this step by asking return the whole file (I think that will require gpt-4)
-    const prompt = `Change the default version of the image ${repo} from ${currentImageVersion} to ${latestImageVersion}. Keep all the other content of the line identical, only change the version, ensure that all the other content remains the same. I don't want you to return the entire file, because it's too big. Only respond with the number of spaces to indent the line and the contents of the changed line. Don't provide any text other than the number of spaces to indent (as a string e.g. "4") the line and the contents of the changed line in the format:\n\n{"indentation": "<NUMBER_OF_SPACES>", "updatedLine": "{CHANGED_LINE_CONTENT"}\n\n${composeFileContents}`
+    const prompt = `Here is a docker-compose file: \n\n${composeFileContents} \n\n Please accurately count the number of spaces at the beginning of the line: 'image: ${repo}.
 
-    // TODO: This is the step only works with gpt-4, so I'm using a dev variable for now on prod
-    const result = process.env.ENV == "dev" ? JSON.stringify(devVariables.updateDockerComposeFile[repo]) : JSON.stringify(devVariables.updateDockerComposeFile[repo]) //await sendToOpenAI(prompt)
+    Then, change the default version of the image ${repo} from ${currentImageVersion} to ${latestImageVersion}. Keep all the other content of the line identical, only change the version, ensure that all the other content remains the same. I don't want you to return the entire file, because it's too big. Only respond with the number of spaces at the beginning of the line and the contents of the changed line. Ensure the number of spaces at the beginning of the line that you respond with results in a valid yaml file. Don't provide any text other than the number of spaces at the beginning of the line (as a string e.g. "4") the line and the contents of the changed line in the format:\n\n{"indentation": "<NUMBER_OF_SPACES>", "updatedLine": "{CHANGED_LINE_CONTENT"}`
+
+    const result = process.env.ENV == "dev" ? JSON.stringify(devVariables.updateDockerComposeFile[repo]) : await sendToOpenAI(prompt)
 
     process.env.ENV == "prod" && console.log(`updateDockerComposeFile: ${result}`)
 
@@ -166,14 +167,13 @@ async function deleteLocalBranch(mainRepoPath, branchName) {
 // Create a summary of the release notes for the PR body
 // ******************************************************
 async function getReleaseNoteSummary(composeFileContents, repo, releaseNotes) {
-    //TODO: This is the prompt I want to use, but it's too long for the current model (text-davinci-003)
-    // const prompt = `Here is a docker-compose.yml file:\n\n${composeFileContents}\n\nAnd here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the release notes for a PR description for updating that docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact the current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
+    const prompt = `Here is a docker-compose.yml file:\n\n${composeFileContents}\n\nAnd here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the release notes for a PR description for updating that docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact the current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
 
     // This is the prompt I'm using for now, but it's not as good as it doesn't include the docker-compose.yml file contents so is less specific
-    const prompt = `Here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the important release notes for a PR description for updating a docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
+    // const prompt = `Here are the release notes for a new version of ${repo}: \n\n${releaseNotes}\n\nWrite a summary of the important release notes for a PR description for updating a docker-compose.yml file with this new version of ${repo} from the release notes. Specifically mention any changes that would impact current usage (e.g. flags changed or deprecated, etc.). Only provide the body of the PR update, no other text or acknowledgment. Write your output using markdown syntax (specifically bullet points and headings to make it easier to read), as it will be used in the body of a GitHub PR so can be formatted. Any flags, paths or code references should be wrapped in backticks \` so they are formatted in the PR body.`
 
     console.log(`Getting latest release note summary for ${repo}...`)
-    return process.env.ENV == "dev" ? "Test description" : await sendToOpenAI(prompt)
+    return process.env.ENV == "dev" ? "Test description" : "Test description" //await sendToOpenAI(prompt)
 }
 
 // ****************************************************
@@ -325,38 +325,40 @@ async function main() {
 
         const currentImageVersion = imageVersions[repo]
         const latestImageVersion = await getLatestImageVersion(repo, currentImageVersion)
-        const branchName = `update-${repo}-${latestImageVersion}`
-        const remoteBranchExists = await checkIfRemoteBranchExists(mainRepoPath, branchName)
-        const prExists = await checkIfPrExists(mainRepoOwner, process.env.MAIN_REPO_NAME, branchName)
+        if (latestImageVersion != "ERROR") {
+            const branchName = `update-${repo}-${latestImageVersion}`
+            const remoteBranchExists = await checkIfRemoteBranchExists(mainRepoPath, branchName)
+            const prExists = await checkIfPrExists(mainRepoOwner, process.env.MAIN_REPO_NAME, branchName)
 
-        // If the latest image version is different than the current image version, and there is no PR
-        if (latestImageVersion != currentImageVersion && !prExists) {
-            console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}...`)
-            if (remoteBranchExists) {
-                console.log("Remote branch exists, but no PR.")
+            // If the latest image version is different than the current image version, and there is no PR
+            if (latestImageVersion != currentImageVersion && !prExists) {
+                console.log(`Updating ${repo} from ${currentImageVersion} to ${latestImageVersion}...`)
+                if (remoteBranchExists) {
+                    console.log("Remote branch exists, but no PR.")
+                } else {
+                    await deleteLocalBranch(mainRepoPath, branchName)
+                    await checkoutNewBranch(mainRepoPath, branchName)
+                    await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
+                    await commitChanges(mainRepoPath, repo, latestImageVersion)
+                    await pushChanges(mainRepoPath, branchName)
+                }
+
+                // Create the PR
+                await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
+
+                // Return to main branch
+                execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
+                    stdio: "inherit",
+                })
             } else {
-                await deleteLocalBranch(mainRepoPath, branchName)
-                await checkoutNewBranch(mainRepoPath, branchName)
-                await updateDockerComposeFile(repo, latestImageVersion, currentImageVersion, composeFilePath, composeFileContents)
-                await commitChanges(mainRepoPath, repo, latestImageVersion)
-                await pushChanges(mainRepoPath, branchName)
+                if (prExists) {
+                    console.log(`PR already exists for ${repo}: ${branchName}`)
+                } else {
+                    console.log(`No update needed for ${repo}`)
+                }
             }
-
-            // Create the PR
-            await createPullRequest(process.env.MAIN_REPO_NAME, branchName, repo, currentImageVersion, latestImageVersion, composeFileContents)
-
-            // Return to main branch
-            execSync(`cd ${mainRepoPath} && git checkout --quiet main`, {
-                stdio: "inherit",
-            })
-        } else {
-            if (prExists) {
-                console.log(`PR already exists for ${repo}: ${branchName}`)
-            } else {
-                console.log(`No update needed for ${repo}`)
-            }
+            console.log()
         }
-        console.log()
     }
 }
 

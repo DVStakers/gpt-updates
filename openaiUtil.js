@@ -8,43 +8,43 @@ const configuration = new Configuration({
 })
 const openai = new OpenAIApi(configuration)
 
-async function sendToOpenAI(prompt) {
-    try {
-        const response = await openai.createCompletion({
-            model: "text-davinci-003",
-            prompt: prompt,
-            max_tokens: 1000, // Max number of tokens to generate
-            temperature: 0, // Make the output deterministic
-        })
-        return response.data.choices[0].text.trim()
-    } catch (error) {
-        console.error(`OPENAI Error: ${error.message}`)
-    }
-}
-
 // async function sendToOpenAI(prompt) {
-//     const messages = []
-
-//     messages.push({ role: "user", content: prompt })
-
 //     try {
-//         const response = await openai.createChatCompletion({
-//             model: "gpt-3.5-turbo",
-//             messages: messages,
-//             temperature: 0,
+//         const response = await openai.createCompletion({
+//             model: "text-davinci-003",
+//             prompt: prompt,
+//             max_tokens: 1000, // Max number of tokens to generate
+//             temperature: 0, // Make the output deterministic
 //         })
-
-//         console.log(response.data.choices[0].message.content)
-//         return response.data.choices[0].message.content
+//         return response.data.choices[0].text.trim()
 //     } catch (error) {
-//         if (error.response) {
-//             console.log(error.response.status)
-//             console.log(error.response.data)
-//         } else {
-//             console.error(`OPENAI Error: ${error.message}`)
-//         }
+//         console.error(`OPENAI Error: ${error.message}`)
 //     }
 // }
+
+async function sendToOpenAI(prompt) {
+    const messages = []
+
+    messages.push({ role: "user", content: prompt })
+
+    try {
+        const response = await openai.createChatCompletion({
+            model: "gpt-4",
+            messages: messages,
+            temperature: 0,
+        })
+
+        console.log(response.data.choices[0].message.content)
+        return response.data.choices[0].message.content
+    } catch (error) {
+        if (error.response) {
+            console.log(error.response.status)
+            console.log(error.response.data)
+        } else {
+            console.error(`OPENAI Error: ${error.message}`)
+        }
+    }
+}
 
 // async function sendToOpenAI(prompt) {
 //     const headers = {
